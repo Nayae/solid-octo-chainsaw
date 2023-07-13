@@ -19,7 +19,8 @@ abstract class Application2D {
     private val imGuiGl3 = ImGuiImplGl3()
 
     protected open fun beforeRun() = Unit
-    protected abstract fun process()
+    protected abstract fun onUpdate()
+    protected abstract fun onRender()
     protected open fun afterRun() = Unit
 
     private fun start() {
@@ -37,6 +38,8 @@ abstract class Application2D {
         glClearColor(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f)
 
         while (!glfwWindowShouldClose(windowHandle)) {
+            onUpdate()
+            
             glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
 
             imGuiGlfw.newFrame()
@@ -44,7 +47,7 @@ abstract class Application2D {
 
             Mouse.newFrame()
 
-            process()
+            onRender()
 
             Mouse.endFrame()
 
