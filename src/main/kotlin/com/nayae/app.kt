@@ -8,6 +8,7 @@ import com.nayae.math.Vector3
 import org.lwjgl.opengl.GL33.*
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 import kotlin.properties.Delegates
@@ -15,7 +16,7 @@ import kotlin.properties.Delegates
 
 object Application : Application2D() {
     private const val MaxHighlightCount = 1024
-    private const val gridTileSize = 50.0f
+    private var gridTileSize = 50.0f
 
     private const val basePath = "C:\\Users\\Gino\\Desktop\\nayae\\src\\main\\resources"
 
@@ -24,9 +25,13 @@ object Application : Application2D() {
         1, 2, 3    // second triangle
     )
 
+    private val lines = floatArrayOf(
+        1.0f, 1.0f, 2.0f, 2.0f
+    )
+
     private val highlights = arrayListOf<Pair<Vector2, Vector3>>()
 
-    private var gridOffset = Vector2(100.0f)
+    private var gridOffset = Vector2(0.0f)
 
     private var program by Delegates.notNull<Int>()
 
@@ -36,6 +41,10 @@ object Application : Application2D() {
     private var vboHl by Delegates.notNull<Int>()
     private var eboHl by Delegates.notNull<Int>()
     private var vaoHl by Delegates.notNull<Int>()
+
+    private var vboLine by Delegates.notNull<Int>()
+    private var eboLine by Delegates.notNull<Int>()
+    private var vaoLine by Delegates.notNull<Int>()
 
     override fun beforeRun() {
         val vertexShader = compileShader(GL_VERTEX_SHADER, "sample.vert.glsl")
@@ -57,6 +66,7 @@ object Application : Application2D() {
         glDeleteShader(vertexShader)
         glDeleteShader(fragmentShader)
 
+        // Grid
         vaoGrid = glGenVertexArrays()
         glBindVertexArray(vaoGrid)
 
@@ -69,6 +79,7 @@ object Application : Application2D() {
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         glBindVertexArray(0)
 
+        // Highlights
         vaoHl = glGenVertexArrays()
         glBindVertexArray(vaoHl)
 
@@ -91,6 +102,26 @@ object Application : Application2D() {
 
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         glBindVertexArray(0)
+
+        // Line
+        vaoLine = glGenVertexArrays()
+        glBindVertexArray(vaoLine)
+
+        vboLine = glGenBuffers()
+        glBindBuffer(GL_ARRAY_BUFFER, vboLine)
+        glBufferData(GL_ARRAY_BUFFER, lines, GL_STREAM_DRAW)
+
+        glVertexAttribPointer(2, 4, GL_FLOAT, false, 4 * Float.SIZE_BYTES, 0)
+        glEnableVertexAttribArray(2)
+
+        glVertexAttribDivisor(2, 1)
+
+        eboLine = glGenBuffers()
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, eboLine)
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices, GL_STATIC_DRAW)
+
+        glBindBuffer(GL_ARRAY_BUFFER, 0)
+        glBindVertexArray(0)
     }
 
     private var lastFrameHover: Pair<Int, Int>? = null
@@ -101,6 +132,7 @@ object Application : Application2D() {
         val width = 1280.0f
         val height = 768.0f
         val hoverRadius = 10.0f
+        gridOffset = Vector2(width / 2.0f, height / 2.0f)
 
         val countX = ceil(width / gridTileSize)
         val countY = ceil(height / gridTileSize)
@@ -108,10 +140,10 @@ object Application : Application2D() {
 
         val relativeMouseX = Mouse.position.x - gridOffset.x
         val relativeMouseY = Mouse.position.y - gridOffset.y
-        val distanceX = relativeMouseX % gridTileSize
+        val distanceX = abs(relativeMouseX % gridTileSize)
         val isWithinXRange = distanceX <= hoverRadius || distanceX >= (gridTileSize - hoverRadius)
 
-        val distanceY = relativeMouseY % gridTileSize
+        val distanceY = abs(relativeMouseY % gridTileSize)
         val isWithinYRange = distanceY <= hoverRadius || distanceY >= (gridTileSize - hoverRadius)
 
         if (isWithinXRange && isWithinYRange) {
@@ -121,6 +153,8 @@ object Application : Application2D() {
             if (lastFrameHover == null) {
                 toggleCornerHighlight(hoveredX, hoveredY, Vector3(1.0f, 0.0f, 0.0f))
                 lastFrameHover = Pair(hoveredX, hoveredY)
+
+                updateLine(Vector2.zero, Vector2(hoveredX.toFloat(), hoveredY.toFloat()))
             }
         } else {
             if (lastFrameHover != null) {
@@ -129,16 +163,19 @@ object Application : Application2D() {
             }
         }
 
-        setUniform("uMode", 0)
         setUniform("uCountX", countX)
         setUniform("uCountY", countY)
         setUniform("uScale", gridTileSize)
         setUniform("uOffset", gridOffset)
 
         setUniform("uModel", Matrix4.createTranslation(-(width * 0.5f), (height * 0.5f), 0.0f))
-//        setUniform("uModel", Matrix4.identity())
         setUniform("uView", Matrix4.createTranslation(0.0f, 0.0f, -3.0f))
         setUniform("uProjection", Matrix4.createOrthographic(width, height, 0.1f, 100.0f))
+
+        setUniform("uMode", 2)
+        setUniform("uLineThickness", 1.0f)
+        glBindVertexArray(vaoLine)
+        glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, 1)
 
         setUniform("uMode", 0)
         glBindVertexArray(vaoGrid)
@@ -158,6 +195,12 @@ object Application : Application2D() {
         glDeleteVertexArrays(vaoGrid)
         glDeleteVertexArrays(vaoHl)
         glDeleteProgram(program)
+    }
+
+    private fun updateLine(start: Vector2, end: Vector2) {
+        glBindBuffer(GL_ARRAY_BUFFER, vboLine)
+        glBufferSubData(GL_ARRAY_BUFFER, 0, floatArrayOf(start.x, start.y, end.x, end.y))
+        glBindBuffer(GL_ARRAY_BUFFER, 0)
     }
 
     private fun toggleCornerHighlight(x: Int, y: Int, color: Vector3) {
