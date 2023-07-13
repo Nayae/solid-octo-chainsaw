@@ -1,6 +1,13 @@
 package com.nayae.math
 
 class Vector3 private constructor() {
+    constructor(value: Float) : this(value, value, value)
+    constructor(x: Float, y: Float, z: Float) : this() {
+        data[0] = x
+        data[1] = y
+        data[2] = z
+    }
+
     val data = floatArrayOf(0.0f, 0.0f, 0.0f)
 
     inline var x: Float

@@ -4,6 +4,7 @@ import com.nayae.gfx.Application2D
 import com.nayae.input.Mouse
 import com.nayae.math.Matrix4
 import com.nayae.math.Vector2
+import com.nayae.math.Vector3
 import org.lwjgl.opengl.GL33.*
 import java.nio.file.Files
 import java.nio.file.Path
@@ -13,6 +14,9 @@ import kotlin.properties.Delegates
 
 
 object Application : Application2D() {
+    private const val MaxHighlightCount = 1024
+    private const val gridTileSize = 50.0f
+
     private const val basePath = "C:\\Users\\Gino\\Desktop\\nayae\\src\\main\\resources"
 
     private val indices = intArrayOf(
@@ -20,9 +24,7 @@ object Application : Application2D() {
         1, 2, 3    // second triangle
     )
 
-    private val hightlights = floatArrayOf(
-        1.0f, 1.0f, 1.0f, 0.0f, 0.0f
-    )
+    private val highlights = arrayListOf<Pair<Vector2, Vector3>>()
 
     private var gridOffset = Vector2(100.0f)
 
@@ -58,13 +60,11 @@ object Application : Application2D() {
         vaoGrid = glGenVertexArrays()
         glBindVertexArray(vaoGrid)
 
+        glVertexAttribDivisor(0, 1)
+
         eboGrid = glGenBuffers()
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, eboGrid)
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices, GL_STATIC_DRAW)
-
-        glVertexAttribPointer(0, 2, GL_FLOAT, false, 8, 0)
-        glEnableVertexAttribArray(0)
-        glVertexAttribDivisor(0, 1)
 
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         glBindVertexArray(0)
@@ -74,7 +74,7 @@ object Application : Application2D() {
 
         vboHl = glGenBuffers()
         glBindBuffer(GL_ARRAY_BUFFER, vboHl)
-        glBufferData(GL_ARRAY_BUFFER, hightlights, GL_STATIC_DRAW)
+        glBufferData(GL_ARRAY_BUFFER, MaxHighlightCount * 5L * Float.SIZE_BYTES, GL_STREAM_DRAW)
 
         glVertexAttribPointer(0, 2, GL_FLOAT, false, 5 * Float.SIZE_BYTES, 0)
         glEnableVertexAttribArray(0)
@@ -93,37 +93,46 @@ object Application : Application2D() {
         glBindVertexArray(0)
     }
 
+    private var lastFrameHover: Pair<Int, Int>? = null
+
     override fun process() {
         glUseProgram(program)
 
         val width = 1280.0f
         val height = 768.0f
-        val scale = 50.0f
         val hoverRadius = 10.0f
 
-        val countX = ceil(width / scale)
-        val countY = ceil(height / scale)
+        val countX = ceil(width / gridTileSize)
+        val countY = ceil(height / gridTileSize)
         val totalCount = (countX * countY).toInt()
 
         val relativeMouseX = Mouse.position.x - gridOffset.x
         val relativeMouseY = Mouse.position.y - gridOffset.y
-        val distanceX = relativeMouseX % scale
-        val isWithinXRange = distanceX <= hoverRadius || distanceX >= (scale - hoverRadius)
+        val distanceX = relativeMouseX % gridTileSize
+        val isWithinXRange = distanceX <= hoverRadius || distanceX >= (gridTileSize - hoverRadius)
 
-        val distanceY = relativeMouseY % scale
-        val isWithinYRange = distanceY <= hoverRadius || distanceY >= (scale - hoverRadius)
+        val distanceY = relativeMouseY % gridTileSize
+        val isWithinYRange = distanceY <= hoverRadius || distanceY >= (gridTileSize - hoverRadius)
 
         if (isWithinXRange && isWithinYRange) {
-            val hoveredX = (relativeMouseX / scale).roundToInt()
-            val hoveredY = (relativeMouseY / scale).roundToInt()
+            val hoveredX = (relativeMouseX / gridTileSize).roundToInt()
+            val hoveredY = (relativeMouseY / gridTileSize).roundToInt()
 
-            println("x: $hoveredX, y: $hoveredY")
+            if (lastFrameHover == null) {
+                toggleCornerHighlight(hoveredX, hoveredY, Vector3(1.0f, 0.0f, 0.0f))
+                lastFrameHover = Pair(hoveredX, hoveredY)
+            }
+        } else {
+            if (lastFrameHover != null) {
+                toggleCornerHighlight(lastFrameHover!!.first, lastFrameHover!!.second, Vector3.zero)
+                lastFrameHover = null
+            }
         }
 
         setUniform("uMode", 0)
         setUniform("uCountX", countX)
         setUniform("uCountY", countY)
-        setUniform("uScale", scale)
+        setUniform("uScale", gridTileSize)
         setUniform("uOffset", gridOffset)
 
         setUniform("uModel", Matrix4.createTranslation(-(width * 0.5f), (height * 0.5f), 0.0f))
@@ -132,16 +141,54 @@ object Application : Application2D() {
         setUniform("uProjection", Matrix4.createOrthographic(width, height, 0.1f, 100.0f))
 
         setUniform("uMode", 0)
-        glBindVertexArray(vaoHl)
+        glBindVertexArray(vaoGrid)
         glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, totalCount)
 
         setUniform("uMode", 1)
         glBindVertexArray(vaoHl)
-        glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, 1)
+        glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, highlights.size)
+
+        glBindVertexArray(0)
     }
 
     override fun afterRun() {
+        glDeleteBuffers(vboHl)
+        glDeleteBuffers(eboGrid)
+        glDeleteBuffers(eboHl)
+        glDeleteVertexArrays(vaoGrid)
+        glDeleteVertexArrays(vaoHl)
         glDeleteProgram(program)
+    }
+
+    private fun toggleCornerHighlight(x: Int, y: Int, color: Vector3) {
+        if (isCornerHighlighted(x, y)) {
+            highlights.removeIf {
+                it.first.x == x.toFloat() && it.first.y == y.toFloat()
+            }
+        } else {
+            highlights.add(Pair(Vector2(x.toFloat(), y.toFloat()), color))
+        }
+
+        if (highlights.size > MaxHighlightCount) {
+            throw Exception("Cannot highlight more corners, max has been reached of $MaxHighlightCount")
+        }
+
+        val data = FloatArray(5 * highlights.size)
+        highlights.forEachIndexed { i, e ->
+            data[i * 5 + 0] = e.first.x
+            data[i * 5 + 1] = e.first.y
+            data[i * 5 + 2] = e.second.x
+            data[i * 5 + 3] = e.second.y
+            data[i * 5 + 4] = e.second.z
+        }
+
+        glBindBuffer(GL_ARRAY_BUFFER, vboHl)
+        glBufferSubData(GL_ARRAY_BUFFER, 0, data)
+        glBindBuffer(GL_ARRAY_BUFFER, 0)
+    }
+
+    private fun isCornerHighlighted(x: Int, y: Int): Boolean {
+        return highlights.any { it.first.x == x.toFloat() && it.first.y == y.toFloat() }
     }
 
     private fun compileShader(type: Int, path: String): Int {
