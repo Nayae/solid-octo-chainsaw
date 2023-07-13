@@ -20,12 +20,20 @@ object Application : Application2D() {
         1, 2, 3    // second triangle
     )
 
+    private val hightlights = floatArrayOf(
+        1.0f, 1.0f, 1.0f, 0.0f, 0.0f
+    )
+
     private var gridOffset = Vector2(100.0f)
 
     private var program by Delegates.notNull<Int>()
 
-    private var ebo by Delegates.notNull<Int>()
-    private var vao by Delegates.notNull<Int>()
+    private var eboGrid by Delegates.notNull<Int>()
+    private var vaoGrid by Delegates.notNull<Int>()
+
+    private var vboHl by Delegates.notNull<Int>()
+    private var eboHl by Delegates.notNull<Int>()
+    private var vaoHl by Delegates.notNull<Int>()
 
     override fun beforeRun() {
         val vertexShader = compileShader(GL_VERTEX_SHADER, "sample.vert.glsl")
@@ -47,11 +55,11 @@ object Application : Application2D() {
         glDeleteShader(vertexShader)
         glDeleteShader(fragmentShader)
 
-        vao = glGenVertexArrays()
-        glBindVertexArray(vao)
+        vaoGrid = glGenVertexArrays()
+        glBindVertexArray(vaoGrid)
 
-        ebo = glGenBuffers()
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo)
+        eboGrid = glGenBuffers()
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, eboGrid)
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices, GL_STATIC_DRAW)
 
         glVertexAttribPointer(0, 2, GL_FLOAT, false, 8, 0)
@@ -60,11 +68,33 @@ object Application : Application2D() {
 
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         glBindVertexArray(0)
+
+        vaoHl = glGenVertexArrays()
+        glBindVertexArray(vaoHl)
+
+        vboHl = glGenBuffers()
+        glBindBuffer(GL_ARRAY_BUFFER, vboHl)
+        glBufferData(GL_ARRAY_BUFFER, hightlights, GL_STATIC_DRAW)
+
+        glVertexAttribPointer(0, 2, GL_FLOAT, false, 5 * Float.SIZE_BYTES, 0)
+        glEnableVertexAttribArray(0)
+
+        glVertexAttribPointer(1, 3, GL_FLOAT, false, 5 * Float.SIZE_BYTES, 8)
+        glEnableVertexAttribArray(1)
+
+        glVertexAttribDivisor(0, 1)
+        glVertexAttribDivisor(1, 1)
+
+        eboHl = glGenBuffers()
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, eboHl)
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices, GL_STATIC_DRAW)
+
+        glBindBuffer(GL_ARRAY_BUFFER, 0)
+        glBindVertexArray(0)
     }
 
     override fun process() {
         glUseProgram(program)
-        glBindVertexArray(vao)
 
         val width = 1280.0f
         val height = 768.0f
@@ -90,16 +120,24 @@ object Application : Application2D() {
             println("x: $hoveredX, y: $hoveredY")
         }
 
+        setUniform("uMode", 0)
         setUniform("uCountX", countX)
         setUniform("uCountY", countY)
         setUniform("uScale", scale)
         setUniform("uOffset", gridOffset)
 
         setUniform("uModel", Matrix4.createTranslation(-(width * 0.5f), (height * 0.5f), 0.0f))
+//        setUniform("uModel", Matrix4.identity())
         setUniform("uView", Matrix4.createTranslation(0.0f, 0.0f, -3.0f))
         setUniform("uProjection", Matrix4.createOrthographic(width, height, 0.1f, 100.0f))
 
+        setUniform("uMode", 0)
+        glBindVertexArray(vaoHl)
         glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, totalCount)
+
+        setUniform("uMode", 1)
+        glBindVertexArray(vaoHl)
+        glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, 1)
     }
 
     override fun afterRun() {
